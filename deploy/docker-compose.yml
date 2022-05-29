@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: password
     command: ["postgres", "-c", "log_statement=all"]
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5435:5432"
     volumes:
       - ../../go-dev-final-db/:/var/lib/postgresql/data/
 
