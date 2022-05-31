@@ -1,6 +1,12 @@
 package handlers
 
-import "net/http"
+import (
+	"github.com/polosaty/go-dev-final/internal/app/storage"
+	"io"
+	"log"
+	"net/http"
+	"strconv"
+)
 
 // postOrder handles
 // POST /api/user/orders — загрузка пользователем номера заказа для расчёта;
@@ -12,7 +18,38 @@ import "net/http"
 // 422 — неверный формат номера заказа;
 // 500 — внутренняя ошибка сервера;
 func (h *MainHandler) postOrder() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {}
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		//take userID from context
+		session := GetSession(r)
+		//take order from body
+		orderBytes, err := io.ReadAll(r.Body)
+		orderStr := string(orderBytes)
+		if err != nil {
+			http.Error(w, "cant read order number", http.StatusUnprocessableEntity)
+			return
+		}
+		orderNum, err := strconv.ParseInt(orderStr, 10, 64)
+		if err != nil {
+			http.Error(w, "cant parse order number", http.StatusUnprocessableEntity)
+			return
+		}
+		if !storage.OrderIsValid(orderNum) {
+			http.Error(w, "order number is invalid", http.StatusUnprocessableEntity)
+			return
+		}
+		err = h.Repository.CreateOrder(ctx, session.UserID, orderStr)
+		if err != nil {
+			log.Println("create order error", err)
+			if err == storage.ErrDuplicateUser {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 }
 
 // getOrders handles

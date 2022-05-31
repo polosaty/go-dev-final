@@ -26,7 +26,7 @@ func NewMainHandler(repository storage.Repository) *MainHandler {
 		r.Post("/login", h.postLogin())
 
 		r.Group(func(r chi.Router) {
-			//r.Use(authMiddleware(secretKey))
+			r.Use(authMiddleware(repository))
 
 			r.Post("/orders", h.postOrder())
 			r.Get("/orders", h.getOrders())

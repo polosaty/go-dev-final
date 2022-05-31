@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
@@ -61,7 +62,18 @@ func (s *PG) CreateUser(ctx context.Context, login string, password string) (use
 		`INSERT INTO "user" (login, password) VALUES($1, $2)
 			RETURNING id`, login, passwordHash).
 		Scan(&userID)
-	//TODO: handle already exists
+
+	//https://github.com/jackc/pgconn/issues/15#issuecomment-867082415
+	var pge *pgconn.PgError
+	if errors.As(err, &pge) {
+		if pge.SQLState() == "23505" {
+			// user already exists
+			// Handle  duplicate key value violates
+			return 0, ErrDuplicateUser
+		}
+		return 0, fmt.Errorf("create user error: %w", err)
+	}
+
 	return
 }
 
@@ -74,6 +86,9 @@ func (s *PG) LoginUser(ctx context.Context, login string, password string) (*Ses
 		`SELECT id, password FROM  "user" WHERE login = $1`, login).
 		Scan(&userID, &passwordHash)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrWrongLogin
+		}
 		return nil, err
 	}
 	if !CheckPasswordHash(password, passwordHash) {
@@ -85,6 +100,7 @@ func (s *PG) LoginUser(ctx context.Context, login string, password string) (*Ses
 
 func (s *PG) CreateSession(ctx context.Context, userID int64) (*Session, error) {
 	session := &Session{
+		UserID:    userID,
 		Token:     generateToken(),
 		ExpiresAt: time.Now().Add(time.Hour * 10),
 	}
@@ -100,12 +116,32 @@ func (s *PG) CreateSession(ctx context.Context, userID int64) (*Session, error) 
 	return session, nil
 }
 
-func (s *PG) GetUserByToken(ctx context.Context, token string) error {
-	panic("implement me")
+func (s *PG) GetUserByToken(ctx context.Context, token string) (int64, error) {
+	var userID int64
+
+	err := s.db.QueryRow(ctx,
+		`SELECT user_id FROM  "user_session" WHERE token = $1 and expires_at > now()`, token).
+		Scan(&userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, ErrWrongToken
+		}
+		return 0, err
+	}
+
+	return userID, nil
 }
 
 func (s *PG) CreateOrder(ctx context.Context, userID int64, order string) error {
-	panic("implement me")
+	_, err := s.db.Exec(ctx,
+		`INSERT INTO "order"("order", "user_id", "uploaded_at") VALUES($1, $2, $3)`,
+		order, userID, time.Now())
+
+	if err != nil {
+		return fmt.Errorf("create order error: %w", err)
+	}
+
+	return nil
 }
 
 func (s *PG) GetOrders(ctx context.Context, userID int64) ([]Order, error) {
