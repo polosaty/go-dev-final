@@ -185,14 +185,81 @@ func (s *PG) GetOrders(ctx context.Context, userID int64) ([]Order, error) {
 
 }
 
-func (s *PG) GetBalance(ctx context.Context, userID int64) (float64, error) {
-	panic("implement me")
+func (s *PG) GetBalance(ctx context.Context, userID int64) (*Balance, error) {
+	balance := &Balance{}
+	err := s.db.QueryRow(ctx,
+		`SELECT balance, withdrawn FROM  "user" WHERE id = $1`, userID).
+		Scan(&balance.Current, &balance.Withdrawn)
+	if err != nil {
+		return nil, err
+	}
+
+	return balance, nil
 }
 
 func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal Withdrawal) error {
-	panic("implement me")
+	//под транзакцией
+	// - вычесть сумму из баланса пользователя и добавить сумму в списания пользователя
+	// - если баланс окажется меньше 0 откатить транзакцию
+	// - зарегистрировать списание
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx error: %w", err)
+	}
+	var newBalance float64
+	err = s.db.QueryRow(ctx,
+		`UPDATE "user" SET balance = balance - $1, withdrawn = withdrawn + $1 WHERE id = $2 
+         RETURNING balance`,
+		withdrawal.Sum, userID).
+		Scan(&newBalance)
+
+	if err != nil {
+		tx.Rollback(ctx)
+		return fmt.Errorf("update user balance error: %w", err)
+	}
+	if newBalance < 0 {
+		err = tx.Rollback(ctx)
+		if err != nil {
+			return fmt.Errorf("rollback update user balance error: %w", err)
+		}
+
+		return ErrInsufficientBalance
+
+	}
+
+	_, err = s.db.Exec(ctx,
+		`INSERT INTO "withdrawal"("order", "sum", "user_id", "processed_at") VALUES($1, $2, $3, now())`,
+		withdrawal.OrderNum, withdrawal.Sum, userID)
+
+	if err != nil {
+		return fmt.Errorf("create withdrawal error: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("cant commit tx %w", err)
+	}
+
+	return nil
+
 }
 
 func (s *PG) GetWithdrawals(ctx context.Context, userID int64) ([]Withdrawal, error) {
-	panic("implement me")
+	rows, err := s.db.Query(ctx,
+		`SELECT "order", "sum", "processed_at" 
+		FROM "withdrawal" WHERE "user_id" = $1 ORDER BY "processed_at" ASC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("cant select orders: %w", err)
+	}
+	var withdrawals []Withdrawal
+
+	for rows.Next() {
+		var v Withdrawal
+		err = rows.Scan(&v.OrderNum, &v.Sum, &v.ProcessedAt)
+		if err != nil {
+			return nil, fmt.Errorf("cant parse row from select withdrawals: %w", err)
+		}
+		withdrawals = append(withdrawals, v)
+	}
+	return withdrawals, nil
 }

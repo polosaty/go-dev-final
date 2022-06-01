@@ -27,11 +27,11 @@ func (h *MainHandler) postOrder() http.HandlerFunc {
 		session := GetSession(r)
 		//take order from body
 		orderBytes, err := io.ReadAll(r.Body)
-		orderStr := string(orderBytes)
 		if err != nil {
 			http.Error(w, "cant read order number", http.StatusUnprocessableEntity)
 			return
 		}
+		orderStr := string(orderBytes)
 		orderNum, err := strconv.ParseInt(orderStr, 10, 64)
 		if err != nil {
 			http.Error(w, "cant parse order number", http.StatusUnprocessableEntity)

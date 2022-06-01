@@ -16,7 +16,15 @@ type Order struct {
 	UploadedAt  *time.Time `json:"uploaded_at"`
 }
 
+type Balance struct {
+	Current   float64 `json:"current"`
+	Withdrawn float64 `json:"withdrawn"`
+}
+
 type Withdrawal struct {
+	OrderNum    string     `json:"order"`
+	Sum         float64    `json:"sum"`
+	ProcessedAt *time.Time `json:"processed_at,omitempty"`
 }
 
 type Session struct {
@@ -34,7 +42,7 @@ type Repository interface {
 	CreateOrder(ctx context.Context, userID int64, order string) error
 	GetOrders(ctx context.Context, userID int64) ([]Order, error)
 
-	GetBalance(ctx context.Context, userID int64) (float64, error)
+	GetBalance(ctx context.Context, userID int64) (*Balance, error)
 
 	CreateWithdrawal(ctx context.Context, userID int64, withdrawal Withdrawal) error
 	GetWithdrawals(ctx context.Context, userID int64) ([]Withdrawal, error)
@@ -47,6 +55,8 @@ var ErrWrongToken = errors.New("wrong token")
 
 var ErrOrderDuplicate = errors.New("order already uploaded")
 var ErrOrderConflict = errors.New("order conflict")
+
+var ErrInsufficientBalance = errors.New("insufficient balance for withdrawn")
 
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
