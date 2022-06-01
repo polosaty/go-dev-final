@@ -138,6 +138,26 @@ func (s *PG) CreateOrder(ctx context.Context, userID int64, order string) error 
 		order, userID, time.Now())
 
 	if err != nil {
+		var pge *pgconn.PgError
+		if errors.As(err, &pge) && pge.SQLState() == "23505" {
+
+			var orderUserID int64
+			selErr := s.db.QueryRow(ctx, `SELECT "user_id" FROM "order" WHERE "order" = $1`, order).
+				Scan(&orderUserID)
+
+			if selErr != nil {
+				return fmt.Errorf("cant select duclicate order: %w", selErr)
+			}
+
+			if orderUserID == userID {
+				// одрер уже есть - пользователь тот же -> already uploaded 200
+				return ErrOrderDuplicate
+			} else {
+				// одрер уже есть - пользователь другой -> conflict 409
+				return ErrOrderConflict
+			}
+
+		}
 		return fmt.Errorf("create order error: %w", err)
 	}
 
@@ -145,7 +165,24 @@ func (s *PG) CreateOrder(ctx context.Context, userID int64, order string) error 
 }
 
 func (s *PG) GetOrders(ctx context.Context, userID int64) ([]Order, error) {
-	panic("implement me")
+	rows, err := s.db.Query(ctx,
+		`SELECT "order", "accrual", "status", "processed_at", "uploaded_at" 
+		FROM "order" WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("cant select orders: %w", err)
+	}
+	var orders []Order
+
+	for rows.Next() {
+		var v Order
+		err = rows.Scan(&v.OrderNum, &v.Accrual, &v.Status, &v.processedAt, &v.UploadedAt)
+		if err != nil {
+			return nil, fmt.Errorf("cant parse row from select orders: %w", err)
+		}
+		orders = append(orders, v)
+	}
+	return orders, nil
+
 }
 
 func (s *PG) GetBalance(ctx context.Context, userID int64) (float64, error) {

@@ -8,8 +8,17 @@ import (
 	"time"
 )
 
-type Order struct{}
-type Withdrawal struct{}
+type Order struct {
+	OrderNum    string   `json:"order"`
+	Status      string   `json:"status"`
+	Accrual     *float64 `json:"accrual,omitempty"`
+	processedAt *time.Time
+	UploadedAt  *time.Time `json:"uploaded_at"`
+}
+
+type Withdrawal struct {
+}
+
 type Session struct {
 	Token     string
 	UserID    int64
@@ -35,6 +44,9 @@ var ErrWrongPassword = errors.New("wrong password")
 var ErrWrongLogin = errors.New("wrong login")
 var ErrDuplicateUser = errors.New("duplicate user")
 var ErrWrongToken = errors.New("wrong token")
+
+var ErrOrderDuplicate = errors.New("order already uploaded")
+var ErrOrderConflict = errors.New("order conflict")
 
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)

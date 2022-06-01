@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"errors"
 	"github.com/polosaty/go-dev-final/internal/app/storage"
 	"io"
 	"log"
@@ -42,13 +44,20 @@ func (h *MainHandler) postOrder() http.HandlerFunc {
 		err = h.Repository.CreateOrder(ctx, session.UserID, orderStr)
 		if err != nil {
 			log.Println("create order error", err)
-			if err == storage.ErrDuplicateUser {
+			if errors.Is(err, storage.ErrOrderConflict) {
 				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			if errors.Is(err, storage.ErrOrderDuplicate) {
+				//номер заказа уже был загружен этим пользователем;
+				w.WriteHeader(http.StatusOK)
 				return
 			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		//новый номер заказа принят в обработку;
+		w.WriteHeader(http.StatusAccepted)
 	}
 }
 
@@ -59,5 +68,29 @@ func (h *MainHandler) postOrder() http.HandlerFunc {
 // 401 — пользователь не авторизован;
 // 500 — внутренняя ошибка сервера;
 func (h *MainHandler) getOrders() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {}
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		//take userID from context
+		session := GetSession(r)
+
+		orders, err := h.Repository.GetOrders(ctx, session.UserID)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if len(orders) == 0 {
+			//нет данных для ответа;
+			w.WriteHeader(http.StatusNoContent)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+
+		err = json.NewEncoder(w).Encode(orders)
+		if err != nil {
+			log.Println("marshal response error: ", err)
+		}
+	}
 }
