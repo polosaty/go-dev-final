@@ -288,6 +288,7 @@ func (s *PG) SelectOrdersForCheckStatus(ctx context.Context, limit int, uploaded
 	rows, err := tx.Query(ctx, query, queryParams...)
 
 	if err != nil {
+		tx.Rollback(ctx)
 		return nil, fmt.Errorf("cant select orders: %w", err)
 	}
 	var orders []OrderForCheckStatus
