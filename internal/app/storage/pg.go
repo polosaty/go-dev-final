@@ -263,3 +263,103 @@ func (s *PG) GetWithdrawals(ctx context.Context, userID int64) ([]Withdrawal, er
 	}
 	return withdrawals, nil
 }
+
+func (s *PG) SelectOrdersForCheckStatus(ctx context.Context, limit int, uploadedAfter *time.Time) ([]OrderForCheckStatus, error) {
+
+	var (
+		queryParams []interface{}
+		query       string
+	)
+	if uploadedAfter != nil {
+		query = `SELECT "order", "status", "uploaded_at" FROM "order" ` +
+			` WHERE "status" NOT IN ('PROCESSED', 'INVALID') ` +
+			` AND "uploaded_at" > $1 ORDER BY "uploaded_at" FOR UPDATE SKIP LOCKED LIMIT $2`
+		queryParams = append(queryParams, uploadedAfter)
+	} else {
+		query = `SELECT "order", "status", "uploaded_at" FROM "order" ` +
+			` WHERE "status" NOT IN ('PROCESSED', 'INVALID') ` +
+			` ORDER BY "uploaded_at" FOR UPDATE SKIP LOCKED LIMIT $1`
+	}
+	queryParams = append(queryParams, limit)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx error: %w", err)
+	}
+	rows, err := tx.Query(ctx, query, queryParams...)
+
+	if err != nil {
+		return nil, fmt.Errorf("cant select orders: %w", err)
+	}
+	var orders []OrderForCheckStatus
+	ordersInRegisteredStatus := make([]string, 0, limit)
+	for rows.Next() {
+		var v OrderForCheckStatus
+		err = rows.Scan(&v.OrderNum, &v.Status, &v.UploadedAt)
+		if err != nil {
+			tx.Rollback(ctx)
+			return nil, fmt.Errorf("cant parse row from select orders: %w", err)
+		}
+		orders = append(orders, v)
+		if v.Status == "REGISTERED" {
+			ordersInRegisteredStatus = append(ordersInRegisteredStatus, v.OrderNum)
+		}
+	}
+
+	if len(ordersInRegisteredStatus) > 0 {
+		_, err = tx.Exec(ctx,
+			`UPDATE "order" SET "status" = 'PROCESSING' WHERE "order" = ANY($1)`, ordersInRegisteredStatus)
+		if err != nil {
+			tx.Rollback(ctx)
+			return nil, fmt.Errorf("cant change orders status from REGISTERED to PROCESSING: %w", err)
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("cant commit change orders status from REGISTERED to PROCESSING: %w", err)
+		}
+
+	}
+	return orders, nil
+}
+
+func (s *PG) UpdateOrderStatus(ctx context.Context, orders []OrderUpdateStatus) error {
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot begin transaction: %w", err)
+	}
+
+	_, err = tx.Exec(ctx,
+		`CREATE TEMP TABLE tmp_table ON COMMIT DROP AS `+
+			` SELECT "order", "status", "accrual", "processed_at"  FROM "order" WITH NO DATA`)
+	if err != nil {
+		return fmt.Errorf("cannot create temp table: %w", err)
+	}
+	_, err = tx.CopyFrom(
+		ctx,
+		pgx.Identifier{"tmp_table"},
+		[]string{"order", "status", "accrual", "processed_at"},
+		pgx.CopyFromSlice(len(orders), func(i int) ([]interface{}, error) {
+			row := orders[i]
+			return []interface{}{row.OrderNum, row.Status, row.Accrual, row.ProcessedAt}, nil
+		}),
+	)
+	if err != nil {
+		return fmt.Errorf("cannot insert rows to temp table: %w", err)
+	}
+
+	_, err = tx.Exec(ctx,
+		`WITH last_status as ( `+
+			` SELECT * FROM tmp_table `+
+			` WHERE NOT EXISTS(`+
+			`  SELECT 1 FROM tmp_table following WHERE tmp_table.processed_at < following.processed_at)) `+
+			`UPDATE "order" SET "status" = last_status.status, "processed_at" = last_status.processed_at `+
+			`FROM last_status WHERE last_status.order = "order"."order" `)
+	if err != nil {
+		return fmt.Errorf("cannot update order from temp table: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}

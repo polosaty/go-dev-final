@@ -16,6 +16,19 @@ type Order struct {
 	UploadedAt  *time.Time `json:"uploaded_at"`
 }
 
+type OrderForCheckStatus struct {
+	OrderNum   string
+	Status     string
+	UploadedAt time.Time
+}
+
+type OrderUpdateStatus struct {
+	OrderNum    string
+	Status      string
+	Accrual     float64
+	ProcessedAt time.Time
+}
+
 type Balance struct {
 	Current   float64 `json:"current"`
 	Withdrawn float64 `json:"withdrawn"`
@@ -46,6 +59,9 @@ type Repository interface {
 
 	CreateWithdrawal(ctx context.Context, userID int64, withdrawal Withdrawal) error
 	GetWithdrawals(ctx context.Context, userID int64) ([]Withdrawal, error)
+
+	SelectOrdersForCheckStatus(ctx context.Context, limit int, uploadedAfter *time.Time) ([]OrderForCheckStatus, error)
+	UpdateOrderStatus(ctx context.Context, orders []OrderUpdateStatus) error
 }
 
 var ErrWrongPassword = errors.New("wrong password")
