@@ -9,6 +9,9 @@ FROM golang:alpine3.15 AS build
 #
 #RUN CGO_ENABLED=0 go build -o /docker-app cmd/gophermart/main.go
 #
+ARG OS=linux_amd64
+COPY ./cmd/accrual/accrual_${OS} /docker-app
+
 ARG UID=1000
 
 RUN adduser \
@@ -18,17 +21,17 @@ RUN adduser \
     --gecos "" \
     --uid ${UID} \
     --home / \
-    app
+    app ; \
+    chmod a+rx /docker-app
 
-FROM scratch
+#FROM golang:alpine3.15
+FROM ubuntu:18.04
 
-ARG OS=linux_amd64
-
-COPY ./cmd/accural/accural_$OS /docker-app
+COPY --from=build /docker-app /docker-app
 COPY --from=build /etc/passwd /etc/passwd
 USER app
 
-ENV SERVER_ADDRESS 0.0.0.0:8080
+ENV ACCRUAL_SYSTEM_ADDRESS 0.0.0.0:8080
 EXPOSE 8080
 
-ENTRYPOINT ["/docker-app"]
+CMD ["/docker-app"]
