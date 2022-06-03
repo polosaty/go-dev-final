@@ -208,6 +208,8 @@ func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal With
 	if err != nil {
 		return fmt.Errorf("begin tx error: %w", err)
 	}
+	defer tx.Rollback(ctx)
+
 	var newBalance float64
 	err = s.db.QueryRow(ctx,
 		`UPDATE "user" SET balance = balance - $1, withdrawn = withdrawn + $1 WHERE id = $2 
@@ -216,17 +218,10 @@ func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal With
 		Scan(&newBalance)
 
 	if err != nil {
-		tx.Rollback(ctx)
 		return fmt.Errorf("update user balance error: %w", err)
 	}
 	if newBalance < 0 {
-		err = tx.Rollback(ctx)
-		if err != nil {
-			return fmt.Errorf("rollback update user balance error: %w", err)
-		}
-
 		return ErrInsufficientBalance
-
 	}
 
 	_, err = s.db.Exec(ctx,

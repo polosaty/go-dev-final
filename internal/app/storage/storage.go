@@ -31,7 +31,7 @@ func (c RFC3339DateTime) MarshalJSON() ([]byte, error) {
 }
 
 type Order struct {
-	OrderNum    string   `json:"order"`
+	OrderNum    string   `json:"number"`
 	Status      string   `json:"status"`
 	Accrual     *float64 `json:"accrual,omitempty"`
 	processedAt *time.Time
@@ -45,7 +45,7 @@ type OrderForCheckStatus struct {
 }
 
 type OrderUpdateStatus struct {
-	OrderNum    string  `json:"order"`
+	OrderNum    string  `json:"number"`
 	Status      string  `json:"status"`
 	Accrual     float64 `json:"accrual,omitempty"`
 	ProcessedAt time.Time
