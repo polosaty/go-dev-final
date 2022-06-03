@@ -3,17 +3,39 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"strings"
 	"time"
 )
+
+type RFC3339DateTime struct {
+	time.Time
+}
+
+func (c *RFC3339DateTime) UnmarshalJSON(b []byte) (err error) {
+	s := strings.Trim(string(b), `"`) // remove quotes
+	if s == "null" {
+		return
+	}
+	c.Time, err = time.Parse(time.RFC3339, s)
+	return
+}
+
+func (c RFC3339DateTime) MarshalJSON() ([]byte, error) {
+	if c.Time.IsZero() {
+		return nil, nil
+	}
+	return []byte(fmt.Sprintf(`"%s"`, c.Time.Format(time.RFC3339))), nil
+}
 
 type Order struct {
 	OrderNum    string   `json:"order"`
 	Status      string   `json:"status"`
 	Accrual     *float64 `json:"accrual,omitempty"`
 	processedAt *time.Time
-	UploadedAt  *time.Time `json:"uploaded_at"`
+	UploadedAt  *RFC3339DateTime `json:"uploaded_at"`
 }
 
 type OrderForCheckStatus struct {
@@ -35,9 +57,9 @@ type Balance struct {
 }
 
 type Withdrawal struct {
-	OrderNum    string     `json:"order"`
-	Sum         float64    `json:"sum"`
-	ProcessedAt *time.Time `json:"processed_at,omitempty"`
+	OrderNum    string           `json:"order"`
+	Sum         float64          `json:"sum"`
+	ProcessedAt *RFC3339DateTime `json:"processed_at,omitempty"`
 }
 
 type Session struct {

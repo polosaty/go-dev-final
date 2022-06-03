@@ -175,7 +175,8 @@ func (s *PG) GetOrders(ctx context.Context, userID int64) ([]Order, error) {
 
 	for rows.Next() {
 		var v Order
-		err = rows.Scan(&v.OrderNum, &v.Accrual, &v.Status, &v.processedAt, &v.UploadedAt)
+		v.UploadedAt = &RFC3339DateTime{}
+		err = rows.Scan(&v.OrderNum, &v.Accrual, &v.Status, &v.processedAt, &v.UploadedAt.Time)
 		if err != nil {
 			return nil, fmt.Errorf("cant parse row from select orders: %w", err)
 		}
@@ -255,7 +256,8 @@ func (s *PG) GetWithdrawals(ctx context.Context, userID int64) ([]Withdrawal, er
 
 	for rows.Next() {
 		var v Withdrawal
-		err = rows.Scan(&v.OrderNum, &v.Sum, &v.ProcessedAt)
+		v.ProcessedAt = &RFC3339DateTime{}
+		err = rows.Scan(&v.OrderNum, &v.Sum, &v.ProcessedAt.Time)
 		if err != nil {
 			return nil, fmt.Errorf("cant parse row from select withdrawals: %w", err)
 		}
