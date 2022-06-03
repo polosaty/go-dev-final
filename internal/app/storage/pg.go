@@ -167,7 +167,7 @@ func (s *PG) CreateOrder(ctx context.Context, userID int64, order string) error 
 func (s *PG) GetOrders(ctx context.Context, userID int64) ([]Order, error) {
 	rows, err := s.db.Query(ctx,
 		`SELECT "order", "accrual", "status", "processed_at", "uploaded_at" 
-		FROM "order" WHERE user_id = $1`, userID)
+		FROM "order" WHERE user_id = $1 ORDER BY "uploaded_at"`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("cant select orders: %w", err)
 	}
@@ -285,10 +285,10 @@ func (s *PG) SelectOrdersForCheckStatus(ctx context.Context, limit int, uploaded
 	if err != nil {
 		return nil, fmt.Errorf("begin tx error: %w", err)
 	}
+	defer tx.Rollback(ctx)
 	rows, err := tx.Query(ctx, query, queryParams...)
 
 	if err != nil {
-		tx.Rollback(ctx)
 		return nil, fmt.Errorf("cant select orders: %w", err)
 	}
 	var orders []OrderForCheckStatus
@@ -297,11 +297,10 @@ func (s *PG) SelectOrdersForCheckStatus(ctx context.Context, limit int, uploaded
 		var v OrderForCheckStatus
 		err = rows.Scan(&v.OrderNum, &v.Status, &v.UploadedAt)
 		if err != nil {
-			tx.Rollback(ctx)
 			return nil, fmt.Errorf("cant parse row from select orders: %w", err)
 		}
 		orders = append(orders, v)
-		if v.Status == "REGISTERED" {
+		if v.Status == "NEW" {
 			ordersInRegisteredStatus = append(ordersInRegisteredStatus, v.OrderNum)
 		}
 	}
@@ -310,14 +309,14 @@ func (s *PG) SelectOrdersForCheckStatus(ctx context.Context, limit int, uploaded
 		_, err = tx.Exec(ctx,
 			`UPDATE "order" SET "status" = 'PROCESSING' WHERE "order" = ANY($1)`, ordersInRegisteredStatus)
 		if err != nil {
-			tx.Rollback(ctx)
-			return nil, fmt.Errorf("cant change orders status from REGISTERED to PROCESSING: %w", err)
+			return nil, fmt.Errorf("cant change orders status from NEW to PROCESSING: %w", err)
 		}
 		if err = tx.Commit(ctx); err != nil {
-			return nil, fmt.Errorf("cant commit change orders status from REGISTERED to PROCESSING: %w", err)
+			return nil, fmt.Errorf("cant commit change orders status from NEW to PROCESSING: %w", err)
 		}
 
 	}
+
 	return orders, nil
 }
 
@@ -351,9 +350,23 @@ func (s *PG) UpdateOrderStatus(ctx context.Context, orders []OrderUpdateStatus) 
 		`WITH last_status as ( `+
 			` SELECT * FROM tmp_table `+
 			` WHERE NOT EXISTS(`+
-			`  SELECT 1 FROM tmp_table following WHERE tmp_table.processed_at < following.processed_at)) `+
-			`UPDATE "order" SET "status" = last_status.status, "processed_at" = last_status.processed_at `+
-			`FROM last_status WHERE last_status.order = "order"."order" `)
+			`  SELECT 1 FROM tmp_table following WHERE tmp_table.processed_at < following.processed_at)), `+
+			`updates as (`+
+			` UPDATE "order" SET `+
+			`  "status" = last_status.status, `+
+			`  "processed_at" = last_status.processed_at, `+
+			`  "accrual" = last_status.accrual `+
+			` FROM last_status WHERE last_status.order = "order"."order" AND "order".status != last_status.status `+
+			` RETURNING "user_id", last_status."accrual", last_status."status"), `+
+			`grouped_updates as ( `+
+			` SELECT sum(accrual) AS accrual_sum, user_id `+
+			`  FROM updates `+
+			`  WHERE status = 'PROCESSED' `+
+			`  GROUP BY updates.user_id) `+
+			`UPDATE "user" `+
+			` SET balance = balance + accrual_sum `+
+			` FROM grouped_updates `+
+			` WHERE "user"."id" = grouped_updates.user_id`)
 	if err != nil {
 		return fmt.Errorf("cannot update order from temp table: %w", err)
 	}

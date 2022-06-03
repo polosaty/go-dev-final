@@ -32,7 +32,7 @@ func NewMainHandler(repository storage.Repository) *MainHandler {
 			r.Get("/orders", h.getOrders())
 			r.Route("/balance", func(r chi.Router) {
 				r.Get("/", h.getBalance())
-				r.Get("/withdraw", h.postWithdrawal())
+				r.Post("/withdraw", h.postWithdrawal())
 				r.Get("/withdraws", h.getWithdraws())
 			})
 		})

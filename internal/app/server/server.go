@@ -10,11 +10,10 @@ import (
 func Serve(addr string, accrualSystemAddress string, db storage.Repository) error {
 	handler := handlers.NewMainHandler(db)
 
-	ctx := context.Background()
-	orderChecker := NewOrderChecker(db)
+	ctx, cancel := context.WithCancel(context.Background())
+	orderChecker := NewOrderChecker(db, accrualSystemAddress)
 	go orderChecker.SelectOrders(ctx, 10)
-	// TODO: goroutine to check order statuses
-	// TODO: goroutine to save order statuses
+	defer cancel()
 
 	server := &http.Server{
 		Addr:    addr,

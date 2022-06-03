@@ -10,7 +10,7 @@ func migration01(ctx context.Context, db DBInterface) error {
 		`
 create sequence users_id_seq;
 
-create type order_status_enum as enum ('REGISTERED', 'PROCESSED', 'INVALID', 'PROCESSING');
+create type order_status_enum as enum ('NEW', 'PROCESSED', 'INVALID', 'PROCESSING');
 
 create table if not exists "user"
 (
@@ -49,9 +49,7 @@ create index if not exists user_session_token_user_id_index
 
 create table if not exists withdrawal
 (
-   id           bigint         not null
-       constraint withdrawal_pk
-           primary key,
+   id           bigserial constraint withdrawal_pk primary key,
    "order"      varchar(255),
    sum          numeric(10, 2) not null,
    processed_at timestamp with time zone default now(),
@@ -70,7 +68,7 @@ create table if not exists "order"
        constraint order_users_id_fk
            references "user"
            on update restrict on delete restrict,
-   status       order_status_enum default 'REGISTERED'::order_status_enum not null,
+   status       order_status_enum default 'NEW'::order_status_enum not null,
    accrual      numeric(10, 2),
    processed_at timestamp with time zone,
    uploaded_at  timestamp with time zone                                  not null
