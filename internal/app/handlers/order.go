@@ -87,7 +87,7 @@ func (h *MainHandler) getOrders() http.HandlerFunc {
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
-
+		log.Printf("orders: %#v\n", orders)
 		err = json.NewEncoder(w).Encode(orders)
 		if err != nil {
 			log.Println("marshal response error: ", err)
