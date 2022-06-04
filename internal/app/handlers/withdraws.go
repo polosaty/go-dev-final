@@ -16,7 +16,7 @@ import (
 // 402 - на счету недостаточно средств;
 // 422 - неверный номер заказа;
 // 500 - внутренняя ошибка сервера.
-func (h *MainHandler) postWithdrawal() http.HandlerFunc {
+func (h *mainHandler) postWithdrawal() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -34,7 +34,7 @@ func (h *MainHandler) postWithdrawal() http.HandlerFunc {
 			http.Error(w, "order number is invalid", http.StatusUnprocessableEntity)
 			return
 		}
-		err = h.Repository.CreateWithdrawal(ctx, session.UserID, withdrawal)
+		err = h.repository.CreateWithdrawal(ctx, session.UserID, withdrawal)
 		if err != nil {
 			log.Println("create withdrawal error", err)
 			if errors.Is(err, storage.ErrInsufficientBalance) {
@@ -55,13 +55,13 @@ func (h *MainHandler) postWithdrawal() http.HandlerFunc {
 // 204 - нет ни одного списания.
 // 401 - пользователь не авторизован.
 // 500 - внутренняя ошибка сервера.
-func (h *MainHandler) getWithdraws() http.HandlerFunc {
+func (h *mainHandler) getWithdraws() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		//take userID from context
 		session := GetSession(r)
 
-		orders, err := h.Repository.GetWithdrawals(ctx, session.UserID)
+		orders, err := h.repository.GetWithdrawals(ctx, session.UserID)
 		if err != nil {
 			log.Println(err)
 			http.Error(w, "", http.StatusInternalServerError)

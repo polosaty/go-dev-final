@@ -8,13 +8,13 @@ import (
 
 // getBalance handles
 // GET /api/user/balance — получение текущего баланса счёта баллов лояльности пользователя;
-func (h *MainHandler) getBalance() http.HandlerFunc {
+func (h *mainHandler) getBalance() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		//take userID from context
 		session := GetSession(r)
 
-		balance, err := h.Repository.GetBalance(ctx, session.UserID)
+		balance, err := h.repository.GetBalance(ctx, session.UserID)
 		if err != nil {
 			log.Println(err)
 			http.Error(w, "", http.StatusInternalServerError)

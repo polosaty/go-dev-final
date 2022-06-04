@@ -6,22 +6,22 @@ import (
 	"github.com/polosaty/go-dev-final/internal/app/storage"
 )
 
-type MainHandler struct {
-	*chi.Mux
-	Repository storage.Repository
+type mainHandler struct {
+	chiMux     *chi.Mux
+	repository storage.Repository
 }
 
-func NewMainHandler(repository storage.Repository) *MainHandler {
+func NewMainHandler(repository storage.Repository) *chi.Mux {
 
-	h := &MainHandler{Mux: chi.NewMux(), Repository: repository}
-	h.Use(gzipInput)
-	h.Use(gzipOutput)
-	h.Use(middleware.RequestID)
-	h.Use(middleware.RealIP)
-	h.Use(middleware.Logger)
-	h.Use(middleware.Recoverer)
+	h := &mainHandler{chiMux: chi.NewMux(), repository: repository}
+	h.chiMux.Use(gzipInput)
+	h.chiMux.Use(gzipOutput)
+	h.chiMux.Use(middleware.RequestID)
+	h.chiMux.Use(middleware.RealIP)
+	h.chiMux.Use(middleware.Logger)
+	h.chiMux.Use(middleware.Recoverer)
 
-	h.Route("/api/user", func(r chi.Router) {
+	h.chiMux.Route("/api/user", func(r chi.Router) {
 		r.Post("/register", h.postRegister())
 		r.Post("/login", h.postLogin())
 
@@ -39,5 +39,5 @@ func NewMainHandler(repository storage.Repository) *MainHandler {
 
 	})
 
-	return h
+	return h.chiMux
 }

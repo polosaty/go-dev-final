@@ -19,7 +19,7 @@ import (
 // 409 — номер заказа уже был загружен другим пользователем;
 // 422 — неверный формат номера заказа;
 // 500 — внутренняя ошибка сервера;
-func (h *MainHandler) postOrder() http.HandlerFunc {
+func (h *mainHandler) postOrder() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -41,7 +41,7 @@ func (h *MainHandler) postOrder() http.HandlerFunc {
 			http.Error(w, "order number is invalid", http.StatusUnprocessableEntity)
 			return
 		}
-		err = h.Repository.CreateOrder(ctx, session.UserID, orderStr)
+		err = h.repository.CreateOrder(ctx, session.UserID, orderStr)
 		if err != nil {
 			log.Println("create order error", err)
 			if errors.Is(err, storage.ErrOrderConflict) {
@@ -67,13 +67,13 @@ func (h *MainHandler) postOrder() http.HandlerFunc {
 // 204 — нет данных для ответа;
 // 401 — пользователь не авторизован;
 // 500 — внутренняя ошибка сервера;
-func (h *MainHandler) getOrders() http.HandlerFunc {
+func (h *mainHandler) getOrders() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		//take userID from context
 		session := GetSession(r)
 
-		orders, err := h.Repository.GetOrders(ctx, session.UserID)
+		orders, err := h.repository.GetOrders(ctx, session.UserID)
 		if err != nil {
 			log.Println(err)
 			http.Error(w, "", http.StatusInternalServerError)

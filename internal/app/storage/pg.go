@@ -2,19 +2,24 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgerrcode"
+	"log"
+	"time"
+
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/polosaty/go-dev-final/internal/app/storage/migrations"
-	"time"
 )
 
 type PG struct {
-	Repository
 	db dbInterface
 }
+
+var _ Repository = (*PG)(nil)
 
 type dbInterface interface {
 	Begin(context.Context) (pgx.Tx, error)
@@ -66,7 +71,8 @@ func (s *PG) CreateUser(ctx context.Context, login string, password string) (use
 	//https://github.com/jackc/pgconn/issues/15#issuecomment-867082415
 	var pge *pgconn.PgError
 	if errors.As(err, &pge) {
-		if pge.SQLState() == "23505" {
+
+		if pgerrcode.IsIntegrityConstraintViolation(pge.SQLState()) {
 			// user already exists
 			// Handle  duplicate key value violates
 			return 0, ErrDuplicateUser
@@ -139,7 +145,7 @@ func (s *PG) CreateOrder(ctx context.Context, userID int64, order string) error 
 
 	if err != nil {
 		var pge *pgconn.PgError
-		if errors.As(err, &pge) && pge.SQLState() == "23505" {
+		if errors.As(err, &pge) && pgerrcode.IsIntegrityConstraintViolation(pge.SQLState()) {
 
 			var orderUserID int64
 			selErr := s.db.QueryRow(ctx, `SELECT "user_id" FROM "order" WHERE "order" = $1`, order).
@@ -166,7 +172,7 @@ func (s *PG) CreateOrder(ctx context.Context, userID int64, order string) error 
 
 func (s *PG) GetOrders(ctx context.Context, userID int64) ([]Order, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT "order", "accrual", "status", "processed_at", "uploaded_at" 
+		`SELECT "order", "accrual", "status", "processed_at", "uploaded_at"
 		FROM "order" WHERE user_id = $1 ORDER BY "uploaded_at"`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("cant select orders: %w", err)
@@ -174,12 +180,19 @@ func (s *PG) GetOrders(ctx context.Context, userID int64) ([]Order, error) {
 	var orders []Order
 
 	for rows.Next() {
-		var v Order
-		v.UploadedAt = &RFC3339DateTime{}
-		err = rows.Scan(&v.OrderNum, &v.Accrual, &v.Status, &v.processedAt, &v.UploadedAt.Time)
+
+		var (
+			v           Order
+			uploadedAt  sql.NullTime
+			processedAt sql.NullTime
+		)
+		err = rows.Scan(&v.OrderNum, &v.Accrual, &v.Status, &processedAt, &uploadedAt)
+
 		if err != nil {
 			return nil, fmt.Errorf("cant parse row from select orders: %w", err)
 		}
+		v.UploadedAt = RFC3339DateTime(uploadedAt)
+		v.processedAt = RFC3339DateTime(processedAt)
 		orders = append(orders, v)
 	}
 	return orders, nil
@@ -208,11 +221,16 @@ func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal With
 	if err != nil {
 		return fmt.Errorf("begin tx error: %w", err)
 	}
-	defer tx.Rollback(ctx) // FIXME: не работает
+	defer func(ctx context.Context, tx pgx.Tx) {
+		err := tx.Rollback(ctx)
+		if err != nil {
+			log.Println("create withdrawal tx rollback error: ", err)
+		}
+	}(ctx, tx)
 
 	var newBalance float64
 	err = tx.QueryRow(ctx,
-		`UPDATE "user" SET balance = balance - $1, withdrawn = withdrawn + $1 WHERE id = $2 
+		`UPDATE "user" SET balance = balance - $1, withdrawn = withdrawn + $1 WHERE id = $2
          RETURNING balance`,
 		withdrawal.Sum, userID).
 		Scan(&newBalance)
@@ -242,7 +260,7 @@ func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal With
 
 func (s *PG) GetWithdrawals(ctx context.Context, userID int64) ([]Withdrawal, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT "order", "sum", "processed_at" 
+		`SELECT "order", "sum", "processed_at"
 		FROM "withdrawal" WHERE "user_id" = $1 ORDER BY "processed_at" ASC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("cant select orders: %w", err)
@@ -251,11 +269,12 @@ func (s *PG) GetWithdrawals(ctx context.Context, userID int64) ([]Withdrawal, er
 
 	for rows.Next() {
 		var v Withdrawal
-		v.ProcessedAt = &RFC3339DateTime{}
-		err = rows.Scan(&v.OrderNum, &v.Sum, &v.ProcessedAt.Time)
+		var processedAt sql.NullTime
+		err = rows.Scan(&v.OrderNum, &v.Sum, &processedAt)
 		if err != nil {
 			return nil, fmt.Errorf("cant parse row from select withdrawals: %w", err)
 		}
+		v.ProcessedAt = RFC3339DateTime(processedAt)
 		withdrawals = append(withdrawals, v)
 	}
 	return withdrawals, nil

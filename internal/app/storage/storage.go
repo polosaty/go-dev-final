@@ -2,17 +2,27 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
-type RFC3339DateTime struct {
-	time.Time
-}
+var ErrWrongPassword = errors.New("wrong password")
+var ErrWrongLogin = errors.New("wrong login")
+var ErrDuplicateUser = errors.New("duplicate user")
+var ErrWrongToken = errors.New("wrong token")
+
+var ErrOrderDuplicate = errors.New("order already uploaded")
+var ErrOrderConflict = errors.New("order conflict")
+
+var ErrInsufficientBalance = errors.New("insufficient balance for withdrawn")
+
+type RFC3339DateTime sql.NullTime
 
 func (c *RFC3339DateTime) UnmarshalJSON(b []byte) (err error) {
 	s := strings.Trim(string(b), `"`) // remove quotes
@@ -34,8 +44,8 @@ type Order struct {
 	OrderNum    string   `json:"number"`
 	Status      string   `json:"status"`
 	Accrual     *float64 `json:"accrual,omitempty"`
-	processedAt *time.Time
-	UploadedAt  *RFC3339DateTime `json:"uploaded_at"`
+	processedAt RFC3339DateTime
+	UploadedAt  RFC3339DateTime `json:"uploaded_at"`
 }
 
 type OrderForCheckStatus struct {
@@ -57,9 +67,9 @@ type Balance struct {
 }
 
 type Withdrawal struct {
-	OrderNum    string           `json:"order"`
-	Sum         float64          `json:"sum"`
-	ProcessedAt *RFC3339DateTime `json:"processed_at,omitempty"`
+	OrderNum    string          `json:"order"`
+	Sum         float64         `json:"sum"`
+	ProcessedAt RFC3339DateTime `json:"processed_at,omitempty"`
 }
 
 type Session struct {
@@ -85,16 +95,6 @@ type Repository interface {
 	SelectOrdersForCheckStatus(ctx context.Context, limit int, uploadedAfter *time.Time) ([]OrderForCheckStatus, error)
 	UpdateOrderStatus(ctx context.Context, orders []OrderUpdateStatus) error
 }
-
-var ErrWrongPassword = errors.New("wrong password")
-var ErrWrongLogin = errors.New("wrong login")
-var ErrDuplicateUser = errors.New("duplicate user")
-var ErrWrongToken = errors.New("wrong token")
-
-var ErrOrderDuplicate = errors.New("order already uploaded")
-var ErrOrderConflict = errors.New("order conflict")
-
-var ErrInsufficientBalance = errors.New("insufficient balance for withdrawn")
 
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
