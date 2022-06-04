@@ -45,7 +45,7 @@ type OrderForCheckStatus struct {
 }
 
 type OrderUpdateStatus struct {
-	OrderNum    string  `json:"number"`
+	OrderNum    string  `json:"order"`
 	Status      string  `json:"status"`
 	Accrual     float64 `json:"accrual,omitempty"`
 	ProcessedAt time.Time

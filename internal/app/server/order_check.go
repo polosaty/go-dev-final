@@ -90,7 +90,7 @@ func (c *OrderChecker) CheckOrders() {
 			log.Println("cant get status for order", err)
 			continue
 		}
-		log.Println("got order status: ", order.OrderNum, order.Status)
+		log.Println("got order status: ", orderStatus.OrderNum, orderStatus.Status)
 		c.orderUpdateChan <- *orderStatus
 	}
 }

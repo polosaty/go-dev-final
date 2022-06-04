@@ -208,10 +208,10 @@ func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal With
 	if err != nil {
 		return fmt.Errorf("begin tx error: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) // FIXME: не работает
 
 	var newBalance float64
-	err = s.db.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`UPDATE "user" SET balance = balance - $1, withdrawn = withdrawn + $1 WHERE id = $2 
          RETURNING balance`,
 		withdrawal.Sum, userID).
@@ -224,7 +224,7 @@ func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal With
 		return ErrInsufficientBalance
 	}
 
-	_, err = s.db.Exec(ctx,
+	_, err = tx.Exec(ctx,
 		`INSERT INTO "withdrawal"("order", "sum", "user_id", "processed_at") VALUES($1, $2, $3, now())`,
 		withdrawal.OrderNum, withdrawal.Sum, userID)
 
