@@ -58,7 +58,7 @@ func (c *OrderChecker) SelectOrders(ctx context.Context, limit int) {
 			}
 			if len(orders) < limit {
 				if uploadedAfter == nil {
-					time.Sleep(time.Millisecond * 500)
+					time.Sleep(time.Second * 1)
 				} else {
 					uploadedAfter = nil
 				}
@@ -150,7 +150,7 @@ func (c *OrderChecker) saveOrderStatuses(ctx context.Context) {
 	//накапливаем статусы чтобы одним запросом обновить
 	statuses := make([]storage.OrderUpdateStatus, 0, buffLen*2) // *2 чтобы не ресайзить в случае ошибок
 	//если не набирается полный slice статусов, то по таймауту сбрасываем сколько есть
-	ticker := time.NewTicker(time.Millisecond * 500)
+	ticker := time.NewTicker(time.Second * 2)
 L:
 	for {
 		select {

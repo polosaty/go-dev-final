@@ -27,15 +27,20 @@ type RFC3339DateTime sql.NullTime
 func (c *RFC3339DateTime) UnmarshalJSON(b []byte) (err error) {
 	s := strings.Trim(string(b), `"`) // remove quotes
 	if s == "null" {
+		c.Valid = false
 		return
 	}
 	c.Time, err = time.Parse(time.RFC3339, s)
+	if err != nil {
+		return fmt.Errorf("cant parse datetime: %s error: %w", s, err)
+	}
+	c.Valid = true
 	return
 }
 
 func (c RFC3339DateTime) MarshalJSON() ([]byte, error) {
-	if c.Time.IsZero() {
-		return nil, nil
+	if !c.Valid {
+		return []byte(`"null"`), nil
 	}
 	return []byte(fmt.Sprintf(`"%s"`, c.Time.Format(time.RFC3339))), nil
 }
