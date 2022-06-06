@@ -1,0 +1,42 @@
+version: '2.4'
+
+services:
+  db:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_DB: gophermart
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    command: ["postgres", "-c", "log_statement=all"]
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - ../../go-dev-final-db/:/var/lib/postgresql/data/
+
+  app:
+    build:
+      context: ../
+      dockerfile: build/app.Dockerfile
+    image: gophermart
+    entrypoint: /docker-app
+    depends_on:
+      - db
+      - accural
+    environment:
+      DATABASE_URI: postgres://postgres:password@db/gophermart
+      RUN_ADDRESS: 0.0.0.0:8080
+      ACCRUAL_SYSTEM_ADDRESS: http://accural:8080
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  accural:
+    build:
+      context: ../
+      dockerfile: build/accural.Dockerfile
+    image: gophermart-accural
+    environment:
+      ACCRUAL_SYSTEM_ADDRESS: http://0.0.0.0:8080
+      DATABASE_URI: postgres://postgres:password@db/gophermart
+    ports:
+      - "127.0.0.1:8081:8080"
+
