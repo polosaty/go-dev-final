@@ -1,0 +1,106 @@
+basePath: /
+definitions:
+  storage.Order:
+    properties:
+      accrual:
+        type: number
+      number:
+        type: string
+      status:
+        enum:
+        - NEW
+        - PROCESSING
+        - PROCESSED
+        - INVALID
+        type: string
+      uploaded_at:
+        example: 1990-12-31T23:59:60Z
+        format: time
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Это учебный проект по курсу go-разработчкик.
+  title: Swagger Example API
+  version: "1.0"
+paths:
+  /api/user/orders:
+    get:
+      consumes:
+      - application/json
+      description: get string by ID
+      operationId: get-orders
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Auth token
+        in: header
+        name: Cookie
+        required: true
+        type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/storage.Order'
+            type: array
+        "204":
+          description: нет данных для ответа
+          schema:
+            items:
+              $ref: '#/definitions/storage.Order'
+            type: array
+        "401":
+          description: пользователь не авторизован
+          schema:
+            type: string
+        "500":
+          description: внутренняя ошибка сервера
+          schema:
+            type: string
+      summary: Получение списка загруженных пользователем номеров заказов, статусов
+        их обработки и информации о начислениях
+securityDefinitions:
+  ApiKeyAuth:
+    in: cookie
+    name: auth
+    type: apiKey
+  OAuth2AccessCode:
+    authorizationUrl: https://example.com/oauth/authorize
+    flow: accessCode
+    scopes:
+      admin: ' Grants read and write access to administrative information'
+    tokenUrl: https://example.com/oauth/token
+    type: oauth2
+  OAuth2Application:
+    flow: application
+    scopes:
+      admin: ' Grants read and write access to administrative information'
+      write: ' Grants write access'
+    tokenUrl: https://example.com/oauth/token
+    type: oauth2
+  OAuth2Implicit:
+    authorizationUrl: /api/user/login
+    flow: implicit
+    scopes:
+      admin: ' Grants read and write access to administrative information'
+      write: ' Grants write access'
+    type: oauth2
+  OAuth2Password:
+    flow: password
+    scopes:
+      admin: ' Grants read and write access to administrative information'
+      read: ' Grants read access'
+      write: ' Grants write access'
+    tokenUrl: https://example.com/oauth/token
+    type: oauth2
+swagger: "2.0"
+x-extension-openapi:
+  example: value on a json format
