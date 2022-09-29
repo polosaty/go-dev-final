@@ -211,7 +211,7 @@ func (s *PG) GetBalance(ctx context.Context, userID int64) (*Balance, error) {
 	return balance, nil
 }
 
-func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal Withdrawal) error {
+func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal Withdrawal) (err error) {
 	//под транзакцией
 	// - вычесть сумму из баланса пользователя и добавить сумму в списания пользователя
 	// - если баланс окажется меньше 0 откатить транзакцию
@@ -222,9 +222,10 @@ func (s *PG) CreateWithdrawal(ctx context.Context, userID int64, withdrawal With
 		return fmt.Errorf("begin tx error: %w", err)
 	}
 	defer func(ctx context.Context, tx pgx.Tx) {
-		err := tx.Rollback(ctx)
 		if err != nil {
-			log.Println("create withdrawal tx rollback error: ", err)
+			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+				log.Println("create withdrawal tx rollback error: ", rollbackErr)
+			}
 		}
 	}(ctx, tx)
 
@@ -330,7 +331,6 @@ func (s *PG) SelectOrdersForCheckStatus(ctx context.Context, limit int, uploaded
 		if err = tx.Commit(ctx); err != nil {
 			return nil, fmt.Errorf("cant commit change orders status from NEW to PROCESSING: %w", err)
 		}
-
 	}
 
 	return orders, nil

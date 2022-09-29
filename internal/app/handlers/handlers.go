@@ -70,6 +70,7 @@ func NewMainHandler(repository storage.Repository) *chi.Mux {
 
 			r.Post("/orders", h.postOrder())
 			r.Get("/orders", h.getOrders())
+			r.Get("/withdrawals", h.getWithdraws()) // WORKAROUND: похоже что поменяли путь в тестах
 			r.Route("/balance", func(r chi.Router) {
 				r.Get("/", h.getBalance())
 				r.Post("/withdraw", h.postWithdrawal())
