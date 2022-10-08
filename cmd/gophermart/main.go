@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"github.com/caarlos0/env/v6"
 	"github.com/polosaty/go-dev-final/internal/app/config"
@@ -28,5 +29,8 @@ func main() {
 	}
 	log.Println("use postgres conn " + cfg.DatabaseURI + " as db")
 
-	log.Fatal(server.Serve(cfg.RunAddress, cfg.AccrualSystemAddress, db))
+	if err := server.Serve(context.Background(), cfg.RunAddress, cfg.AccrualSystemAddress, db); err != nil {
+		log.Fatal("serve error:", err)
+	}
+
 }

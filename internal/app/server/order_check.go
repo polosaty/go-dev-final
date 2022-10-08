@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -27,14 +28,18 @@ func NewOrderChecker(db storage.Repository, accrualSystemAddress string) *OrderC
 	}
 }
 
-func (c *OrderChecker) SelectOrders(ctx context.Context, limit int) {
+func (c *OrderChecker) SelectOrders(ctx context.Context, wg *sync.WaitGroup, limit int) {
 	if limit == 0 {
 		limit = 100
 	}
 	orderCheckChan := make(chan storage.OrderForCheckStatus, 10)
 
-	go c.checkOrders(ctx, orderCheckChan) // stops by closing chanel
-	defer close(orderCheckChan)
+	wg.Add(1)
+	go c.checkOrders(ctx, wg, orderCheckChan) // stops by closing chanel
+	defer func() {
+		close(orderCheckChan)
+		wg.Done()
+	}()
 
 	var uploadedAfter *time.Time = nil
 
@@ -76,10 +81,20 @@ func (c *OrderChecker) SelectOrders(ctx context.Context, limit int) {
 
 }
 
-func (c *OrderChecker) checkOrders(ctx context.Context, orderCheckChan <-chan storage.OrderForCheckStatus) {
+func (c *OrderChecker) checkOrders(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	orderCheckChan <-chan storage.OrderForCheckStatus,
+) {
 	orderUpdateChan := make(chan *storage.OrderUpdateStatus, 10)
-	go c.saveOrderStatuses(ctx, orderUpdateChan) // stops by closing chanel
-	defer close(orderUpdateChan)
+
+	wg.Add(1)
+	go c.saveOrderStatuses(ctx, wg, orderUpdateChan) // stops by closing chanel
+
+	defer func() {
+		close(orderUpdateChan)
+		wg.Done()
+	}()
 
 	for order := range orderCheckChan {
 		log.Println("check order status: ", order.OrderNum)
@@ -148,13 +163,27 @@ func (c *OrderChecker) updateStatuses(ctx context.Context, statuses []storage.Or
 	return nil
 }
 
-func (c *OrderChecker) saveOrderStatuses(ctx context.Context, orderUpdateChan <-chan *storage.OrderUpdateStatus) {
+func (c *OrderChecker) saveOrderStatuses(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	orderUpdateChan <-chan *storage.OrderUpdateStatus,
+) {
+
+	defer wg.Done()
 	buffLen := 10
 	//накапливаем статусы чтобы одним запросом обновить
 	statuses := make([]storage.OrderUpdateStatus, 0, buffLen*2) // *2 чтобы не ресайзить в случае ошибок
 	//если не набирается полный slice статусов, то по таймауту сбрасываем сколько есть
 	ticker := time.NewTicker(time.Second * 5)
+	saveCollectedStatuses := func(ctx context.Context) {
+		if len(statuses) < 1 {
+			return
+		}
 
+		if err := c.updateStatuses(ctx, statuses); err == nil {
+			statuses = statuses[:0]
+		}
+	}
 	for {
 		select {
 		case status := <-orderUpdateChan:
@@ -168,17 +197,18 @@ func (c *OrderChecker) saveOrderStatuses(ctx context.Context, orderUpdateChan <-
 			}
 
 			if len(statuses) == buffLen {
-				if err := c.updateStatuses(ctx, statuses); err == nil {
-					statuses = statuses[:0]
-				}
+				saveCollectedStatuses(ctx)
 			}
 		case <-ticker.C:
-			if len(statuses) < 1 {
-				continue
-			}
-			if err := c.updateStatuses(ctx, statuses); err == nil {
-				statuses = statuses[:0]
-			}
+			saveCollectedStatuses(ctx)
+
+		case <-ctx.Done():
+			func() {
+				ctxWithTimeout, cancel := context.WithTimeout(context.Background(), time.Second*5)
+				defer cancel()
+				saveCollectedStatuses(ctxWithTimeout)
+			}()
+			return
 		}
 	}
 

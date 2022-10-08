@@ -1,25 +1,15 @@
 # go-musthave-diploma-tpl
 
-Шаблон репозитория для индивидуального дипломного проекта курса «Go-разработчик»
+Индивидуальный дипломный проекта курса «Go-разработчик»
 
-# Начало работы
-
-1. Склонируйте репозиторий в любую подходящую директорию на вашем компьютере.
-2. В корне репозитория выполните команду `go mod init <name>` (где `<name>` — адрес вашего репозитория на GitHub без
-   префикса `https://`) для создания модуля
-
-# Обновление шаблона
-
-Чтобы иметь возможность получать обновления автотестов и других частей шаблона, выполните команду:
-
-```
-git remote add -m master template https://github.com/yandex-praktikum/go-musthave-diploma-tpl.git
+## Обновление swagger
+```shell
+go install github.com/swaggo/swag/cmd/swag@latest
+swag init -g handlers\handlers.go  --parseDependency
 ```
 
-Для обновления кода автотестов выполните команду:
-
+## Запуск пиложения
+```shell
+docker-compose -f deploy/docker-compose.yml build
+docker-compose -f deploy/docker-compose.yml up
 ```
-git fetch template && git checkout template/master .github
-```
-
-Затем добавьте полученные изменения в свой репозиторий.
