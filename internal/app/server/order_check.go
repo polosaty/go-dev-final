@@ -10,80 +10,93 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 )
 
+var ErrOrderStatusNotReady = errors.New("order result not ready")
+
 type OrderChecker struct {
 	db                   storage.Repository
-	orderCheckChan       chan storage.OrderForCheckStatus
-	orderUpdateChan      chan storage.OrderUpdateStatus
 	accrualSystemAddress string
 }
 
 func NewOrderChecker(db storage.Repository, accrualSystemAddress string) *OrderChecker {
 	return &OrderChecker{
 		db:                   db,
-		orderCheckChan:       make(chan storage.OrderForCheckStatus, 10),
-		orderUpdateChan:      make(chan storage.OrderUpdateStatus, 10),
 		accrualSystemAddress: accrualSystemAddress,
 	}
 }
 
-func (c *OrderChecker) stop() {
-	close(c.orderCheckChan)
-}
-
-func (c *OrderChecker) SelectOrders(ctx context.Context, limit int) {
+func (c *OrderChecker) SelectOrders(ctx context.Context, wg *sync.WaitGroup, limit int) {
 	if limit == 0 {
 		limit = 100
 	}
+	orderCheckChan := make(chan storage.OrderForCheckStatus, 10)
 
-	go c.saveOrderStatuses(ctx) // stops by context
-	go c.CheckOrders()          // stops by closing chanel
+	wg.Add(1)
+	go c.checkOrders(ctx, wg, orderCheckChan) // stops by closing chanel
+	defer func() {
+		close(orderCheckChan)
+		wg.Done()
+	}()
 
 	var uploadedAfter *time.Time = nil
 
 	//выбираем ордеры "по кругу": если вернулось меньше лимита, то начинаем с начала
-	//если ничего не выбралось, при uploadedAfter == nil, спим (TODO: возможно до сигнала)
+	//если ничего не выбралось, при uploadedAfter == nil, спим (возможно до сигнала ctx.Done())
+	t := time.NewTicker(time.Second * 5)
 	for {
 		select {
-		case <-ctx.Done():
-			c.stop()
-			return
-		default:
+		case <-t.C:
 			orders, err := c.db.SelectOrdersForCheckStatus(ctx, limit, uploadedAfter)
 			if err != nil {
 				log.Println("error selecting order from check status", err)
 				continue
 			}
 			if len(orders) < limit {
-				if uploadedAfter == nil {
-					time.Sleep(time.Second * 1)
-				} else {
-					uploadedAfter = nil
-				}
+				//значит дошли до конца и нужно начинать с первого одрера
+				uploadedAfter = nil
 			} else {
+				//обновляем uploadedAfter из последнего выбранного ордера
+				//для того чтобы в следующем запросе выбрать ордеры начиная со следующего
 				uploadedAfter = &orders[len(orders)-1].UploadedAt
 			}
 			for _, order := range orders {
 				select {
 				case <-ctx.Done():
-					c.stop()
 					return
-				default:
-					c.orderCheckChan <- order
+				case orderCheckChan <- order:
+					continue
 				}
 			}
-
+			//if len(orders) == 0 {
+			//	//значит мало ордеров на проверку
+			//	time.Sleep(time.Second * 5)
+			//}
+		case <-ctx.Done():
+			return
 		}
 	}
 
 }
 
-func (c *OrderChecker) CheckOrders() {
-	defer close(c.orderUpdateChan)
+func (c *OrderChecker) checkOrders(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	orderCheckChan <-chan storage.OrderForCheckStatus,
+) {
+	orderUpdateChan := make(chan *storage.OrderUpdateStatus, 10)
 
-	for order := range c.orderCheckChan {
+	wg.Add(1)
+	go c.saveOrderStatuses(ctx, wg, orderUpdateChan) // stops by closing chanel
+
+	defer func() {
+		close(orderUpdateChan)
+		wg.Done()
+	}()
+
+	for order := range orderCheckChan {
 		log.Println("check order status: ", order.OrderNum)
 		orderStatus, err := c.CheckOrder(order.OrderNum)
 		if err != nil {
@@ -91,11 +104,9 @@ func (c *OrderChecker) CheckOrders() {
 			continue
 		}
 		log.Println("got order status: ", orderStatus.OrderNum, orderStatus.Status)
-		c.orderUpdateChan <- *orderStatus
+		orderUpdateChan <- orderStatus
 	}
 }
-
-var ErrOrderStatusNotReady = errors.New("order result not ready")
 
 func (c *OrderChecker) CheckOrder(order string) (*storage.OrderUpdateStatus, error) {
 	var result storage.OrderUpdateStatus
@@ -144,48 +155,61 @@ func (c *OrderChecker) CheckOrder(order string) (*storage.OrderUpdateStatus, err
 	result.ProcessedAt = time.Now()
 	return &result, nil
 }
+func (c *OrderChecker) updateStatuses(ctx context.Context, statuses []storage.OrderUpdateStatus) error {
+	if err := c.db.UpdateOrderStatus(ctx, statuses); err != nil {
+		log.Println("save statuses error: ", err)
+		return err
+	}
+	return nil
+}
 
-func (c *OrderChecker) saveOrderStatuses(ctx context.Context) {
+func (c *OrderChecker) saveOrderStatuses(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	orderUpdateChan <-chan *storage.OrderUpdateStatus,
+) {
+
+	defer wg.Done()
 	buffLen := 10
 	//накапливаем статусы чтобы одним запросом обновить
 	statuses := make([]storage.OrderUpdateStatus, 0, buffLen*2) // *2 чтобы не ресайзить в случае ошибок
 	//если не набирается полный slice статусов, то по таймауту сбрасываем сколько есть
-	ticker := time.NewTicker(time.Second * 2)
-L:
-	for {
-		select {
-		case <-ctx.Done():
-			break L
-		case status := <-c.orderUpdateChan:
-			if status.Status != "INVALID" && status.Status != "PROCESSED" {
-				log.Printf("wrong status to save: %v\n", status)
-			} else {
-				statuses = append(statuses, status)
-			}
+	ticker := time.NewTicker(time.Second * 5)
+	saveCollectedStatuses := func(ctx context.Context) {
+		if len(statuses) < 1 {
+			return
+		}
 
-			if len(statuses) == buffLen {
-				if err := c.db.UpdateOrderStatus(ctx, statuses); err != nil {
-					log.Println("save statuses error: ", err)
-					continue
-				}
-				statuses = statuses[:0]
-			}
-		case <-ticker.C:
-			if len(statuses) < 1 {
-				continue
-			}
-			if err := c.db.UpdateOrderStatus(ctx, statuses); err != nil {
-				log.Println("save statuses error: ", err)
-				continue
-			}
+		if err := c.updateStatuses(ctx, statuses); err == nil {
 			statuses = statuses[:0]
 		}
 	}
+	for {
+		select {
+		case status := <-orderUpdateChan:
+			if status == nil {
+				return
+			}
+			if status.Status != "INVALID" && status.Status != "PROCESSED" {
+				log.Printf("wrong status to save: %v\n", status)
+			} else {
+				statuses = append(statuses, *status)
+			}
 
-	for status := range c.orderUpdateChan {
-		statuses = append(statuses, status)
+			if len(statuses) == buffLen {
+				saveCollectedStatuses(ctx)
+			}
+		case <-ticker.C:
+			saveCollectedStatuses(ctx)
+
+		case <-ctx.Done():
+			func() {
+				ctxWithTimeout, cancel := context.WithTimeout(context.Background(), time.Second*5)
+				defer cancel()
+				saveCollectedStatuses(ctxWithTimeout)
+			}()
+			return
+		}
 	}
-	if err := c.db.UpdateOrderStatus(ctx, statuses); err != nil {
-		log.Println("save statuses error: ", err)
-	}
+
 }

@@ -61,12 +61,19 @@ func (h *mainHandler) postOrder() http.HandlerFunc {
 	}
 }
 
-// getOrders handles
-// GET /api/user/orders — получение списка загруженных пользователем номеров заказов,
-// статусов их обработки и информации о начислениях;
-// 204 — нет данных для ответа;
-// 401 — пользователь не авторизован;
-// 500 — внутренняя ошибка сервера;
+// getOrders godoc
+// @Summary			Получение списка загруженных пользователем номеров заказов, статусов их обработки и информации о начислениях
+// @Description		get string by ID
+// @ID				get-orders
+// @Accept			json
+// @Produce			json
+// @Param			id path int true "Account ID"
+// @Param			Cookie header object true "Auth token"
+// @Success			200 {object} []storage.Order
+// @Success			204 {object} []storage.Order  "нет данных для ответа"
+// @Failure			401 {string} String "пользователь не авторизован"
+// @Failure			500 {string} String "внутренняя ошибка сервера"
+// @Router			/api/user/orders [get]
 func (h *mainHandler) getOrders() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()

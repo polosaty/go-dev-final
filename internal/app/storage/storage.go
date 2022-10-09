@@ -46,11 +46,11 @@ func (c RFC3339DateTime) MarshalJSON() ([]byte, error) {
 }
 
 type Order struct {
-	OrderNum    string   `json:"number"`
-	Status      string   `json:"status"`
-	Accrual     *float64 `json:"accrual,omitempty"`
-	processedAt RFC3339DateTime
-	UploadedAt  RFC3339DateTime `json:"uploaded_at"`
+	OrderNum    string          `json:"number"`
+	Status      string          `json:"status" enums:"NEW,PROCESSING,PROCESSED,INVALID"`
+	Accrual     *float64        `json:"accrual,omitempty"`
+	processedAt RFC3339DateTime `swaggertype:"string" format:"time" example:"1990-12-31T23:59:60Z"`
+	UploadedAt  RFC3339DateTime `json:"uploaded_at"  swaggertype:"string" format:"time" example:"1990-12-31T23:59:60Z"`
 }
 
 type OrderForCheckStatus struct {
@@ -61,7 +61,7 @@ type OrderForCheckStatus struct {
 
 type OrderUpdateStatus struct {
 	OrderNum    string  `json:"order"`
-	Status      string  `json:"status"`
+	Status      string  `json:"status" enums:"NEW,PROCESSING,PROCESSED,INVALID"`
 	Accrual     float64 `json:"accrual,omitempty"`
 	ProcessedAt time.Time
 }
@@ -74,7 +74,7 @@ type Balance struct {
 type Withdrawal struct {
 	OrderNum    string          `json:"order"`
 	Sum         float64         `json:"sum"`
-	ProcessedAt RFC3339DateTime `json:"processed_at,omitempty"`
+	ProcessedAt RFC3339DateTime `json:"processed_at,omitempty" swaggertype:"string" format:"time" example:"1990-12-31T23:59:60Z"`
 }
 
 type Session struct {
